@@ -277,4 +277,99 @@ public class SceneCameraController : MonoBehaviour
         Gizmos.color = new Color(targetGizmoColor.r, targetGizmoColor.g, targetGizmoColor.b, 0.4f);
         Gizmos.DrawLine(targetPosition, transform.position);
     }
+
+    public void SyncToCurrentTransformPose(bool recenterPivotInFront = true, float fallbackDistance = 5f)
+    {
+        // 1) Extract yaw/pitch from the current camera rotation
+        Vector3 eul = transform.rotation.eulerAngles;
+        float newYaw = eul.y;
+
+        float newPitch = eul.x;
+        if (newPitch > 180f) newPitch -= 360f; // normalize to [-180, 180)
+        newPitch = Mathf.Clamp(newPitch, minPitch, maxPitch);
+
+        // 2) Decide the pivot and distance
+        if (stickyTargetTransform != null)
+        {
+            // If orbiting a sticky target, keep it as pivot
+            targetPosition = stickyTargetTransform.position;
+            desiredDistance = Mathf.Clamp(
+                Vector3.Distance(transform.position, targetPosition),
+                minDistance, maxDistance
+            );
+        }
+        else if (recenterPivotInFront)
+        {
+            // Recenter pivot directly in front of the camera using the controller's desiredDistance (or a fallback)
+            float dist = desiredDistance > 0f ? desiredDistance : fallbackDistance;
+            dist = Mathf.Clamp(dist, minDistance, maxDistance);
+
+            targetPosition = transform.position + transform.forward * dist;
+            desiredDistance = dist;
+        }
+        else
+        {
+            // If you previously had a pivot, recompute the distance from it; otherwise fall back to front recenter
+            if (targetPosition == default)
+            {
+                float dist = desiredDistance > 0f ? desiredDistance : fallbackDistance;
+                dist = Mathf.Clamp(dist, minDistance, maxDistance);
+                targetPosition = transform.position + transform.forward * dist;
+                desiredDistance = dist;
+            }
+            else
+            {
+                desiredDistance = Mathf.Clamp(
+                    Vector3.Distance(transform.position, targetPosition),
+                    minDistance, maxDistance
+                );
+            }
+        }
+
+        // 3) Apply angles to both desired and smoothed states; reset damping velocities
+        desiredYaw = newYaw;
+        desiredPitch = newPitch;
+
+        yaw = desiredYaw;
+        pitch = desiredPitch;
+
+        yawVel = 0f;
+        pitchVel = 0f;
+        camVel = Vector3.zero;
+    }
+
+    /// <summary>
+    /// Hard snap the camera to a pose and rebuild orbit pivot in front using current desiredDistance.
+    /// Useful if you want an API to externally set pose and keep controller coherent instantly.
+    /// </summary>
+    public void SnapToPose(Vector3 worldPos, Quaternion worldRot, float fallbackDistance = 5f)
+    {
+        transform.SetPositionAndRotation(worldPos, worldRot);
+        SyncToCurrentTransformPose(recenterPivotInFront: true, fallbackDistance: fallbackDistance);
+    }
+
+    /// <summary>
+    /// Recenter the pivot directly in front of the camera using current desiredDistance (or fallback).
+    /// </summary>
+    public void RecenterPivotAtLookDistance(float fallbackDistance = 5f)
+    {
+        float dist = desiredDistance > 0f ? desiredDistance : fallbackDistance;
+        dist = Mathf.Clamp(dist, minDistance, maxDistance);
+
+        targetPosition = transform.position + transform.forward * dist;
+        desiredDistance = dist;
+    }
+
+    /// <summary>
+    /// If you already have a pivot, recompute desiredDistance from the current transform.
+    /// </summary>
+    public void SyncDistanceFromCurrentPivot()
+    {
+        desiredDistance = Mathf.Clamp(
+            Vector3.Distance(transform.position, targetPosition),
+            minDistance, maxDistance
+        );
+    }
+
+
 }
